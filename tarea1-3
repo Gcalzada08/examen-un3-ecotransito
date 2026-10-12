@@ -3,6 +3,7 @@
 # ==========================================================================
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 # 1. Cargar o definir el dataset
 data = {
@@ -80,6 +81,10 @@ df_clean[numeric_cols] = imputer.fit_transform(df_clean[numeric_cols])
 
 # --------------------------------------------------------------------------
 # Resultado final
+csv_path = Path(__file__).resolve().parent / "datos_limpios.csv"
+df_clean.to_csv(csv_path, index=False, encoding="utf-8")
+print(f"\nCSV de datos limpios guardado en: {csv_path}")
+
 print("\nDataFrame después del pipeline de limpieza e imputación:")
 print(df_clean)
 print(df_clean.head(10).to_string())
