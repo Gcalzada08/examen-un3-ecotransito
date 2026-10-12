@@ -1,80 +1,70 @@
 # ==========================================================================
 # TAREA 4: SCRIPT DE STREAMLIT (app_ecotransito.py)
+# Ejecutar con:  streamlit run app_ecotransito.py
+# Requiere cdmx_air_traffic_clean.csv (lo genera tareas_1_a_3.py)
 # ==========================================================================
-# ==========================================================================
-# TAREA 4: SCRIPT DE STREAMLIT (app_ecotransito.py)
-# ==========================================================================
-import streamlit as st
+from pathlib import Path
+
+import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.express as px
 import seaborn as sns
-import matplotlib.pyplot as plt
+import streamlit as st
 
-# Configuración de página
-st.set_page_config(page_title="EcoTransito CDMX", page_icon="🌎", layout="wide")
-st.title("🌎 Dashboard EcoTransito CDMX")
+COLS_NUM = ["Concentracion_PM25", "Nivel_NO2", "Indice_Trafico_Vehicular"]
+RUTA_CSV = Path(__file__).parent / "cdmx_air_traffic_clean.csv"
 
-# Datos de ejemplo (puedes reemplazar con tu CSV)
-data = {
-    'Timestamp': pd.date_range("2026-10-01 08:00:00", periods=10, freq="h"),
-    'Zona_Estacion': ['centro_historico','zona_oriente','zona_sur','zona_oriente','zona_sur',
-                      'centro_historico','zona_oriente','zona_sur','zona_oriente','zona_sur'],
-    'Concentracion_PM25': [35.4, 42.1, 120.5, 310.0, 18.2, 25.0, 40.0, 55.0, 60.0, 22.0],
-    'Nivel_NO2': [42.1, 48.5, 89.2, 195.0, 22.4, 30.0, 45.0, 60.0, 70.0, 25.0],
-    'Indice_Trafico_Vehicular': [85.0, 92.5, 98.0, 15.0, 45.0, 60.0, 75.0, 80.0, 90.0, 50.0],
-}
-df = pd.DataFrame(data)
+# 1. Configuración de página
+st.set_page_config(page_title="Sistema EcoTránsito CDMX", layout="wide")
+st.title("Sistema EcoTránsito CDMX")
 
-# KPIs
+
+# 2. Carga de datos limpios (en caché para no leer el archivo en cada interacción)
+@st.cache_data
+def cargar_datos(ruta: Path) -> pd.DataFrame:
+    return pd.read_csv(ruta, parse_dates=["Timestamp"])
+
+
+if not RUTA_CSV.exists():
+    st.error("No se encontró cdmx_air_traffic_clean.csv. Ejecuta primero: python tareas_1_a_3.py")
+    st.stop()
+
+df = cargar_datos(RUTA_CSV)
+
+# 3. Barra lateral: selector dinámico de zonas
+st.sidebar.header("Filtros")
+zonas = sorted(df["Zona_Estacion"].unique())
+zonas_sel = st.sidebar.multiselect("Zona de estación", options=zonas, default=zonas)
+
+df_filtrado = df[df["Zona_Estacion"].isin(zonas_sel)]
+
+# 4. KPIs (si el filtro deja la tabla vacía, se avisa y se detiene la app)
+if df_filtrado.empty:
+    st.warning("⚠ No hay datos para los filtros seleccionados. Ajusta la selección en la barra lateral.")
+    st.stop()
+
 col1, col2, col3 = st.columns(3)
-col1.metric("Promedio PM2.5", f"{df['Concentracion_PM25'].mean():.2f}")
-col2.metric("Promedio NO2", f"{df['Nivel_NO2'].mean():.2f}")
-col3.metric("Promedio Tráfico", f"{df['Indice_Trafico_Vehicular'].mean():.2f}")
+col1.metric("Total de lecturas activas", len(df_filtrado))
+col2.metric("Promedio PM₂.₅ (µg/m³)", f"{df_filtrado['Concentracion_PM25'].mean():.1f}")
+col3.metric("Índice máximo de tráfico", f"{df_filtrado['Indice_Trafico_Vehicular'].max():.1f}")
 
-# Pestañas
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-    "📈 PM2.5", "📦 NO2", "🚗 Tráfico", "⚙️ Estado Sensor",
-    "🔗 Correlaciones", "📉 Dispersión", "🌐 Gráfico 3D"
-])
+# 5. Pestañas de visualización
+tab1, tab2 = st.tabs(["Dispersión (Plotly)", "Correlaciones (Seaborn)"])
 
 with tab1:
-    st.subheader("Evolución temporal de PM2.5")
-    fig = px.line(df, x="Timestamp", y="Concentracion_PM25", color="Zona_Estacion", markers=True)
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("Tráfico vehicular vs. PM2.5")
+    fig = px.scatter(
+        df_filtrado,
+        x="Indice_Trafico_Vehicular",
+        y="Concentracion_PM25",
+        color="Zona_Estacion",
+        hover_data=["ID_Registro", "Hora_Dia"],
+    )
+    st.plotly_chart(fig, width="stretch")
 
 with tab2:
-    st.subheader("Distribución de NO2 por zona")
-    fig, ax = plt.subplots()
-    sns.boxplot(data=df, x="Zona_Estacion", y="Nivel_NO2", ax=ax)
-    st.pyplot(fig)
-
-with tab3:
-    st.subheader("Histograma del tráfico vehicular")
-    fig, ax = plt.subplots()
-    sns.histplot(df['Indice_Trafico_Vehicular'], bins=10, kde=True, ax=ax)
-    st.pyplot(fig)
-
-
-with tab4:
-    st.subheader("Matrices de correlación")
-
-    # Seleccionar solo columnas numéricas
-    numeric_cols = df.select_dtypes(include=['float64','int64']).columns
-
-    st.write("Pearson:")
-    st.dataframe(df[numeric_cols].corr(method="pearson"))
-
-    st.write("Spearman:")
-    st.dataframe(df[numeric_cols].corr(method="spearman"))
-
-
-with tab5:
-    st.subheader("Gráfico de dispersión PM2.5 vs NO2")
-    fig = px.scatter(df, x="Concentracion_PM25", y="Nivel_NO2", color="Zona_Estacion", size="Indice_Trafico_Vehicular")
-    st.plotly_chart(fig, use_container_width=True)
-
-with tab6:
-    st.subheader("Gráfico 3D multivariado (PM2.5, NO2, Tráfico)")
-    fig = px.scatter_3d(df, x="Concentracion_PM25", y="Nivel_NO2", z="Indice_Trafico_Vehicular",
-                        color="Zona_Estacion", size="Indice_Trafico_Vehicular")
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("Mapa de calor de correlación")
+    corr = df_filtrado[COLS_NUM].corr()
+    fig_hm, ax = plt.subplots(figsize=(6, 4))
+    sns.heatmap(corr, annot=True, cmap="RdBu_r", vmin=-1, vmax=1, fmt=".2f", ax=ax)
+    st.pyplot(fig_hm)
